@@ -1,0 +1,49 @@
+{
+  "name": "miku-repo-bundle",
+  "version": "0.1.0",
+  "description": "CLI tool to assemble repository reference folders for generative AI handoff.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igapyon/miku-repo-bundle.git"
+  },
+  "homepage": "https://github.com/igapyon/miku-repo-bundle#readme",
+  "bugs": {
+    "url": "https://github.com/igapyon/miku-repo-bundle/issues"
+  },
+  "keywords": [
+    "cli",
+    "repository",
+    "bundle",
+    "ai",
+    "java"
+  ],
+  "bin": {
+    "miku-repo-bundle": "./dist/main.js"
+  },
+  "exports": {
+    ".": "./dist/main.js"
+  },
+  "types": "./dist/main.d.ts",
+  "files": [
+    "dist/",
+    "README.md",
+    "docs/",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.19.1"
+  },
+  "scripts": {
+    "clean": "node --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
+    "build": "npm run clean && tsc -p tsconfig.json && node --eval \"import { chmodSync } from 'node:fs'; chmodSync('dist/main.js', 0o755);\" && npm test",
+    "start": "node dist/main.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
+  }
+}

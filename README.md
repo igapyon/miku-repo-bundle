@@ -4,9 +4,9 @@
 repository.
 
 The bundle is intended for generative AI tools and coding agents. It packages
-repository metadata, source files, reference documents, a class index, artifact
-notes, and an optional jar artifact so the receiver can inspect the project as
-reference material.
+repository metadata, source files, reference documents, optional class index
+data, artifact notes, and an optional jar artifact so the receiver can inspect
+the project as reference material.
 
 ## Purpose
 
@@ -28,6 +28,7 @@ Recommended usage is to pass an existing jar whenever possible:
 miku-repo-bundle ./repo \
   --output ./dist/repo-reference \
   --artifact ./repo/target/app.jar \
+  --class-index ./class-index.jsonl \
   --entry com.example.Main
 ```
 
@@ -37,9 +38,44 @@ External documentation directories can also be included:
 miku-repo-bundle ./repo \
   --output ./dist/framework-reference \
   --artifact ./repo/target/framework.jar \
+  --class-index ./framework-class-index.jsonl \
   --docs ./framework-docs \
   --docs ./migration-notes
 ```
+
+## Responsibility Boundary
+
+`miku-repo-bundle` keeps a narrow responsibility.
+
+It assembles reference material that already exists or can be collected from the
+repository. It does not decide how to build the repository, how to choose the
+best jar, or how to inspect the jar. Those orchestration steps can be handled by
+an Agent Skill or another workflow around this CLI.
+
+In scope:
+
+- read repository metadata
+- collect source files and documentation
+- copy an explicitly specified `--artifact <jar>` as `<repo-name>-artifact.jar`
+- include an explicitly specified `--class-index <jsonl>` in the text bundle
+  input
+- generate artifact notes and checksum for the specified artifact
+- generate `MANIFEST.md`
+- run `miku-text-bundle` for the text bundle files
+
+Out of scope:
+
+- building the repository
+- selecting an artifact automatically
+- invoking `miku-javaclass2json-java`
+- deciding size tuning through trial and error
+- uploading the final folder to an AI service
+
+Agent Skill workflows may perform those out-of-scope steps before or after
+calling `miku-repo-bundle`.
+
+See [Agent Skill Workflow](docs/agent-skill-workflow.md) for the intended
+division between this CLI and a future Agent Skill workflow.
 
 ## Runtime Requirement
 
@@ -63,16 +99,28 @@ repo-reference/
 ├─ text-bundle-000-prompt.md
 ├─ text-bundle-001.md
 ├─ text-bundle-002.md
+├─ ...
 ├─ text-bundle-999-index.md
-└─ artifact.jar
+└─ repo-reference-artifact.jar
 ```
 
-`artifact.jar` is included only when an artifact is available.
+`<repo-name>-artifact.jar` is included only when an artifact is available. The
+repo name prefix helps avoid ambiguity when multiple reference bundles are given
+to the same AI session.
 
 Source files are included in `text-bundle-001.md` and following text bundle
 parts. They are not stored as separate source files in the output folder. Use
 `text-bundle-999-index.md` to find which text bundle part contains a specific
 source file.
+
+## Output Directory Policy
+
+`--output <dir>` points to the final output folder.
+
+If the output folder already exists, `miku-repo-bundle` should fail by default.
+Use `--force` to replace a previously generated output folder. `--force` should
+only remove the selected output folder, not parent directories or unrelated
+paths.
 
 ## MANIFEST.md
 
@@ -83,7 +131,7 @@ It should explain:
 - this is a repository reference bundle
 - files in the bundle are reference-only
 - source code is inside the text bundle part files
-- `artifact.jar` is binary reference material
+- `<repo-name>-artifact.jar` is binary reference material
 - the receiver should read `text-bundle-000-prompt.md` after `MANIFEST.md`
 
 Minimum read order:
@@ -95,10 +143,9 @@ modification_policy: do_not_modify
 read_order:
   - MANIFEST.md
   - text-bundle-000-prompt.md
-  - text-bundle-001.md
-  - text-bundle-002.md
+  - text-bundle-001.md and following part files
   - text-bundle-999-index.md
-  - artifact.jar
+  - <repo-name>-artifact.jar
 ```
 
 ## Text Bundle Contents
@@ -112,12 +159,38 @@ The text bundle should contain:
 - source files
 - repository documents
 - external documentation from `--docs <dir>`
-- `class-index.jsonl`
+- `class-index.jsonl`, when supplied with `--class-index <jsonl>`
 - artifact notes
 - artifact checksum
 
-`artifact.jar` is not included in the text bundle. It is copied beside the text
-bundle files as a binary sidecar.
+The artifact jar is not included in the text bundle. It is copied beside the
+text bundle files as a binary sidecar named `<repo-name>-artifact.jar`.
+
+## Text Bundle Size Policy
+
+`miku-repo-bundle` should pass explicit size options to `miku-text-bundle`
+instead of relying on hidden defaults.
+
+Initial defaults:
+
+- `--max-chars 120000`
+- `--max-input-file-bytes 1000000`
+
+Large files, including `class-index.jsonl`, artifact notes, generated metadata,
+or collected source files, may exceed these limits. In that case,
+`miku-repo-bundle` should not silently drop important reference material.
+
+Expected behavior:
+
+- preserve the `miku-text-bundle` skipped-file diagnostics
+- record skipped files in `text-bundle-999-index.md`
+- fail when required generated files such as artifact notes cannot be included
+- fail when an explicitly supplied `--class-index <jsonl>` cannot be included
+- allow explicit size tuning through `miku-repo-bundle` options
+
+The generated text bundle should remain file-boundary aware. Normal files should
+not be split in the middle unless `miku-text-bundle` applies its documented
+large-single-file splitting behavior.
 
 ## Artifact Policy
 
@@ -131,26 +204,25 @@ repository.
 Artifact handling is ordered as follows:
 
 1. If `--artifact <jar>` is specified, the given jar is copied into the final
-   output folder as `artifact.jar`.
-2. If `--artifact` is not specified and `--build` is specified, the tool may try
-   to build the repository with Maven or Gradle.
-3. If neither `--artifact` nor `--build` is specified, the bundle is generated
-   without `artifact.jar`.
+   output folder as `<repo-name>-artifact.jar`.
+2. If `--artifact` is not specified, the bundle is generated
+   without an artifact jar.
 
-`--artifact` and `--build` should not be used together.
+`miku-repo-bundle` does not build the repository. When build behavior is needed,
+run it outside this CLI and pass the resulting jar with `--artifact <jar>`.
 
-## Build Fallback
+## Class Index Policy
 
-`--build` is an explicit fallback for repositories that can be built locally in
-a simple way.
+`miku-repo-bundle` does not generate `class-index.jsonl` by itself.
 
-Expected first behavior:
+When a class index is useful, generate it before calling `miku-repo-bundle` and
+pass it with `--class-index <jsonl>`. Agent Skill workflows may use
+`miku-javaclass2json-java` for that preparation step.
 
-- Maven repositories: try `mvn package`
-- Gradle repositories: try `./gradlew build` or `gradle build`
-
-Build failure should be reported clearly. The tool should not hide build errors
-or pretend that an artifact exists.
+If `--class-index <jsonl>` is specified, the file is copied into the intermediate
+text input and must be included in the generated text bundle. If it cannot be
+read or cannot be included due to size limits, the command should fail with a
+clear diagnostic.
 
 ## Documentation Collection
 
@@ -173,6 +245,40 @@ Repository-local documents and external documents should be kept separate in
 the intermediate text input so the receiver can understand their origin from the
 text bundle.
 
+## Collection and Exclusion Policy
+
+The source collection step should avoid generated output, dependency caches, VCS
+metadata, and local scratch areas.
+
+Default excluded directories:
+
+- `.git`
+- `.gradle`
+- `.mvn/wrapper`
+- `.codex`
+- `.idea`
+- `.vscode`
+- `node_modules`
+- `target`
+- `build`
+- `dist`
+- `coverage`
+- `workplace`
+- `tmp`
+- `temp`
+
+The repository root `.gitignore` should be respected where practical. If the
+implementation cannot fully match Git's ignore semantics, the limitation should
+be reported in diagnostics.
+
+Default source candidates:
+
+- `src/main/java`
+- `src/test/java`, when enabled by option
+- build files such as `pom.xml`, `build.gradle`, `settings.gradle`, and
+  `gradle.properties`
+- repository-local documents listed in the documentation collection section
+
 ## Processing Outline
 
 1. Read repository metadata:
@@ -181,10 +287,9 @@ text bundle.
    - commit hash
 2. Resolve artifact:
    - use `--artifact <jar>` when specified
-   - optionally try `--build` when explicitly requested
-3. Generate class index:
-   - call `miku-javaclass2json-java` when a jar artifact is available
-   - write `class-index.jsonl` into the text bundle input
+3. Resolve class index:
+   - use `--class-index <jsonl>` when specified
+   - copy it into the text bundle input
 4. Collect source and project files:
    - `src/main/java`
    - optionally `src/test/java`
@@ -195,7 +300,7 @@ text bundle.
 6. Generate artifact notes and checksum when an artifact is available
 7. Run the text bundling step to generate `text-bundle-*.md`
 8. Generate final `MANIFEST.md`
-9. Copy `artifact.jar` as a sidecar when available
+9. Copy `<repo-name>-artifact.jar` as a sidecar when available
 
 ## AI Usage
 
@@ -209,8 +314,9 @@ This folder is a repository reference bundle.
 Read MANIFEST.md first.
 The source code is included in text-bundle-001.md and following text bundle
 parts.
-artifact.jar is binary reference material. Prefer the class index and artifact
-notes in the text bundle before reasoning from the jar.
+The repo-name artifact jar is binary reference material. Prefer artifact notes
+and the class index, when provided in the text bundle, before reasoning from the
+jar.
 Do not modify files from this bundle.
 ```
 
@@ -222,8 +328,39 @@ miku-text-bundle
 
 miku-repo-bundle
   = prepares repository reference material, uses text bundle files for source
-    and documents, and keeps jar artifacts as binary sidecars
+    and documents, and keeps repo-named jar artifacts as binary sidecars
 ```
+
+## Development
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Run build and tests:
+
+```bash
+npm run build
+```
+
+Check CLI help:
+
+```bash
+node dist/main.js --help
+```
+
+## Repository Operation
+
+`workplace/` is local scratch space for smoke outputs, external checkouts, and
+verification artifacts. It is ignored except for `workplace/.gitkeep`.
+
+Generated JavaScript under `dist/`, dependencies under `node_modules/`, and
+local editor or MCP settings are not committed.
+
+Project-specific miku-soft notes are in
+[docs/miku-soft-reference.md](docs/miku-soft-reference.md).
 
 ## License
 
