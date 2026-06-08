@@ -1,21 +1,35 @@
-name: Release
+name: Release CLI bundle
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag name, such as v0.5.0"
+        required: true
+        type: string
 
 permissions:
   contents: write
 
+env:
+  PRODUCT_NAME: miku-repo-bundle
+  RELEASE_ASSETS_DIR: release-assets
+
 jobs:
   release:
-    name: Build and publish GitHub Release
+    name: Build and publish CLI bundle
     runs-on: ubuntu-latest
+    env:
+      TAG_NAME: ${{ github.event.inputs.tag_name || github.ref_name }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release tag
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG_NAME }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -26,12 +40,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build and test
-        run: npm run build
-
       - name: Validate release tag
-        env:
-          TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           VERSION="${TAG_NAME#v}"
@@ -44,19 +53,30 @@ jobs:
               ;;
           esac
 
-      - name: Prepare release artifacts
-        run: mkdir -p release-artifacts
+      - name: Build CLI bundle
+        run: npm run bundle
 
-      - name: Create npm package tarball
-        run: npm pack --pack-destination release-artifacts
+      - name: Smoke test CLI bundle
+        run: npm run smoke:bundle
 
-      - name: Create dist archive
-        run: tar -czf "release-artifacts/miku-repo-bundle-${GITHUB_REF_NAME}-dist.tar.gz" dist package.json README.md LICENSE docs
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          mkdir -p "${RELEASE_ASSETS_DIR}"
+          cp "bundle/${PRODUCT_NAME}.mjs" "${RELEASE_ASSETS_DIR}/${PRODUCT_NAME}-${VERSION}.mjs"
+          cp "bundle/${PRODUCT_NAME}-sources.tgz" "${RELEASE_ASSETS_DIR}/${PRODUCT_NAME}-sources-${VERSION}.tgz"
+
+      - name: Verify release assets
+        run: |
+          set -euo pipefail
+          test -s "${RELEASE_ASSETS_DIR}/${PRODUCT_NAME}-${TAG_NAME#v}.mjs"
+          test -s "${RELEASE_ASSETS_DIR}/${PRODUCT_NAME}-sources-${TAG_NAME#v}.tgz"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ env.TAG_NAME }}
           generate_release_notes: true
-          files: release-artifacts/*
+          files: ${{ env.RELEASE_ASSETS_DIR }}/*
           overwrite_files: true

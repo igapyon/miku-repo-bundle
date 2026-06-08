@@ -357,8 +357,8 @@ node dist/main.js --help
 Create a GitHub Release by pushing a version tag that starts with `v`:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.5.0
+git push origin v0.5.0
 ```
 
 The release workflow runs `npm ci`, `npm run build`, creates an npm package
