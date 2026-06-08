@@ -77,6 +77,9 @@ calling `miku-repo-bundle`.
 See [Agent Skill Workflow](docs/agent-skill-workflow.md) for the intended
 division between this CLI and a future Agent Skill workflow.
 
+See [Agent Skills Handoff](docs/agent-skills-handoff.md) for the next-step
+handoff text for creating the Agent Skills package.
+
 ## Runtime Requirement
 
 `miku-repo-bundle` requires `miku-text-bundle` at runtime.
