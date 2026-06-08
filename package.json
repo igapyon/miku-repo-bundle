@@ -1,6 +1,6 @@
 {
   "name": "miku-repo-bundle",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "CLI tool to assemble repository reference folders for generative AI handoff.",
   "license": "Apache-2.0",
   "type": "module",
@@ -38,6 +38,8 @@
   "scripts": {
     "clean": "node --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
     "build": "npm run clean && tsc -p tsconfig.json && node --eval \"import { chmodSync } from 'node:fs'; chmodSync('dist/main.js', 0o755);\" && npm test",
+    "bundle": "npm run build && node scripts/build-cli-bundle.mjs",
+    "smoke:bundle": "node scripts/smoke-cli-bundle.mjs",
     "start": "node dist/main.js",
     "test": "vitest run"
   },
